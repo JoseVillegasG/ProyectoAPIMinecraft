@@ -1,130 +1,107 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Button,
+  Image,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 export default function HomeScreen() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewerRef = useRef<any>(null);
+  const isWeb = Platform.OS === "web";
 
-  // detect web runtime (avoid running DOM / skinview3d in Expo Go / native)
-  const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
+  const [username, setUsername] = useState("");
+  const [skinUrl, setSkinUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
+  // skin desde el nombre del jugador
+  const fetchSkin = async () => {
+    if (!username) {
+      Alert.alert("Error", "Por favor ingresa un nombre de jugador.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      //  UUID
+      const profileRes = await fetch(
+        `https://corsproxy.io/?https://api.mojang.com/users/profiles/minecraft/${username}`
+      );
+      if (!profileRes.ok) throw new Error("Jugador no encontrado");
+      const profileData = await profileRes.json();
+      const uuid = profileData.id;
+
+      //Obtener texturas
+      const textureRes = await fetch(
+        `https://corsproxy.io/?https://sessionserver.mojang.com/session/minecraft/profile/${uuid}`
+      );
+      const textureData = await textureRes.json();
+
+      //  base64
+      const encodedValue = textureData.properties[0].value;
+      const decoded = JSON.parse(atob(encodedValue));
+
+      // Obtener URL del skin
+      const skin = decoded.textures?.SKIN?.url;
+      if (!skin) throw new Error("No se encontró la skin");
+
+      setSkinUrl(skin);
+    } catch (error: any) {
+      console.error(error);
+      Alert.alert("Error", error.message || "No se pudo obtener la skin");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // cargar skin en web con skinview3d
   useEffect(() => {
-    if (!isWeb) return; // do nothing on native / expo-go
+    if (!isWeb || !skinUrl) return;
 
     let mounted = true;
-    if (!canvasRef.current) return;
-
     (async () => {
-      // dynamic import so this runs only in the browser
       const skinview3d = await import("skinview3d");
       if (!mounted || !canvasRef.current) return;
 
-      const canvas = canvasRef.current!;
+      if (viewerRef.current) viewerRef.current.dispose?.();
+
       const viewer = new skinview3d.SkinViewer({
-        canvas,
+        canvas: canvasRef.current!,
         width: 400,
         height: 400,
       });
 
       viewerRef.current = viewer;
 
-      // use https skin URL
-      const skinUrl =
-        "https://textures.minecraft.net/texture/7fd9ba42a7c81eeea22f1524271ae85a8e045ce0af5a6ae16c6406ae917e68b5";
-
-      // load skin
       try {
         await viewer.loadSkin(skinUrl);
       } catch (e) {
         console.error("Failed to load skin", e);
       }
 
-      // configure controls / rotation (enable user rotation; fallback to pointer-drag if controls missing)
-      try {
-        if (viewer.controls) {
-          viewer.controls.enabled = true;
-          if ("autoRotate" in viewer.controls) (viewer.controls as any).autoRotate = false;
-        } else {
-          // fallback: implement simple pointer-drag rotation on the canvas
-          let dragging = false;
-          let lastX = 0;
-          let lastY = 0;
-          const canvasEl = canvas;
-
-          const onDown = (e: any) => {
-            dragging = true;
-            lastX = e.clientX;
-            lastY = e.clientY;
-            try {
-              canvasEl.setPointerCapture?.(e.pointerId);
-            } catch {}
-          };
-
-          const onMove = (e: any) => {
-            if (!dragging) return;
-            const dx = e.clientX - lastX;
-            const dy = e.clientY - lastY;
-            lastX = e.clientX;
-            lastY = e.clientY;
-            if (viewer.scene && viewer.scene.rotation) {
-              viewer.scene.rotation.y -= dx * 0.01;
-              viewer.scene.rotation.x = Math.max(
-                -Math.PI / 2,
-                Math.min(Math.PI / 2, viewer.scene.rotation.x - dy * 0.01)
-              );
-            }
-            viewer.render?.();
-          };
-
-          const onUp = (e: any) => {
-            dragging = false;
-            try {
-              canvasEl.releasePointerCapture?.(e.pointerId);
-            } catch {}
-          };
-
-          canvasEl.addEventListener("pointerdown", onDown);
-          window.addEventListener("pointermove", onMove);
-          window.addEventListener("pointerup", onUp);
-
-          (viewer as any).__customRotationHandlers = { onDown, onMove, onUp };
-        }
-
-        if (viewer.scene && viewer.scene.rotation) {
-          viewer.scene.rotation.set(0, 0, 0);
-        }
-        if (viewer.camera && viewer.camera.position) {
-          viewer.camera.position.set(0, 0, 50);
-          viewer.camera.lookAt(viewer.scene.position);
-        }
-      } catch (e) {
-        console.warn("Could not fully configure controls/animations:", e);
-      }
+      if (viewer.controls) viewer.controls.enabled = true;
     })();
 
     return () => {
       mounted = false;
       if (viewerRef.current) {
-        try {
-          const v = viewerRef.current as any;
-          const handlers = v?.__customRotationHandlers;
-          if (handlers && canvasRef.current) {
-            canvasRef.current.removeEventListener("pointerdown", handlers.onDown);
-            window.removeEventListener("pointermove", handlers.onMove);
-            window.removeEventListener("pointerup", handlers.onUp);
-          }
-          v.dispose?.();
-        } catch {}
+        viewerRef.current.dispose?.();
         viewerRef.current = null;
       }
     };
-  }, [isWeb]);
+  }, [skinUrl, isWeb]);
 
-  if (!isWeb) {
-    // avoid rendering DOM canvas / skinview3d when opened in Expo Go (native)
+  // WEB
+  if (isWeb) {
     return (
-      <>
+      <div style={{ fontFamily: "sans-serif" }}>
         <div
-          id="pageHeader"
           style={{
             position: "fixed",
             top: 0,
@@ -136,51 +113,21 @@ export default function HomeScreen() {
             zIndex: 1000,
           }}
         >
-        
+          <label
+            style={{
+              fontSize: 24,
+              fontWeight: "bold",
+              marginLeft: 50,
+              lineHeight: "64px",
+              color: "#333",
+            }}
+          >
+            Proyecto API Minecraft
+          </label>
         </div>
 
-        <div style={{ paddingTop: 64, paddingLeft: 24, paddingRight: 24 }}>
-          <div style={{ marginTop: 24 }}>
-            <div style={{ padding: 24, background: "#fff", borderRadius: 8, boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}>
-              This view is only available on web. Open the app in a browser (expo web) to see the skin viewer.
-            </div>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  // web / browser rendering (original layout, canvas shown)
-  return (
-    <>
-      <div
-        id="pageHeader"
-        style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 64,
-          backgroundColor: "#ccc",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-          zIndex: 1000,
-        }}
-      >
-        <label style={{ fontSize: 24, fontWeight: "bold", marginLeft: 50, lineHeight: "64px", fontFamily: "sans-serif", color: "#333" }}>
-          Proyecto API Minecraft
-        </label>
-      </div>
-
-      <div style={{ paddingTop: 64, paddingLeft: 24, paddingRight: 24 }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 24,
-            marginTop: 24,
-          }}
-        >
-          <div>
+        <div style={{ paddingTop: 80, paddingLeft: 24, paddingRight: 24 }}>
+          <div style={{ display: "flex", gap: 24 }}>
             <canvas
               ref={canvasRef}
               style={{
@@ -189,57 +136,130 @@ export default function HomeScreen() {
                 borderStyle: "solid",
                 borderWidth: 2,
                 borderColor: "black",
-                display: "block",
               }}
             />
-          </div>
-
-          <div
-            role="region"
-            aria-label="Search card"
-            style={{
-              width: 320,
-              background: "#fff",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-              borderRadius: 8,
-              padding: 16,
-            }}
-          >
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>Search</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                type="search"
-                placeholder="Search..."
-                style={{
-                  flex: 1,
-                  padding: "8px 10px",
-                  borderRadius: 6,
-                  border: "1px solid #ccc",
-                  outline: "none",
-                }}
-              />
-              <button
-                type="button"
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "#1976d2",
-                  color: "#fff",
-                  cursor: "pointer",
-                }}
-              >
-                Go
-              </button>
-            </div>
-
-            <div style={{ marginTop: 12, color: "#666", fontSize: 13 }}>
-              Enter a username or skin ID to look up a skin.
+            <div
+              style={{
+                width: 320,
+                background: "#fff",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>Buscar jugador</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  type="search"
+                  placeholder="Nombre de jugador..."
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: "8px 10px",
+                    borderRadius: 6,
+                    border: "1px solid #ccc",
+                  }}
+                />
+                <button
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: "#1976d2",
+                    color: "#fff",
+                    cursor: "pointer",
+                  }}
+                  onClick={fetchSkin}
+                >
+                  {loading ? "..." : "Ir"}
+                </button>
+              </div>
+              <div style={{ marginTop: 12, color: "#666", fontSize: 13 }}>
+                Ingresa el nombre exacto del jugador de Minecraft.
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </>
+    );
+  }
+
+  // Expo Go
+  const skinPreview = skinUrl
+    ? `https://mc-heads.net/body/${skinUrl.split("/").pop()}/400`
+    : null;
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Proyecto API Minecraft</Text>
+      </View>
+
+      <View style={styles.content}>
+        {loading ? (
+          <ActivityIndicator size="large" color="#1976d2" />
+        ) : skinPreview ? (
+          <Image
+            source={{ uri: skinPreview }}
+            style={styles.skinImage}
+            resizeMode="contain"
+          />
+        ) : (
+          <Text style={{ color: "#555", marginBottom: 20 }}>
+            Busca un jugador para ver su skin.
+          </Text>
+        )}
+
+        <View style={styles.searchBox}>
+          <Text style={styles.searchLabel}>Buscar jugador</Text>
+          <TextInput
+            placeholder="Nombre de jugador..."
+            value={username}
+            onChangeText={setUsername}
+            style={styles.input}
+            placeholderTextColor="#777"
+          />
+          <Button title="Buscar" onPress={fetchSkin} />
+        </View>
+      </View>
+    </View>
   );
 }
 
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#f5f5f5" },
+  header: {
+    height: 64,
+    backgroundColor: "#ccc",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 3,
+  },
+  headerTitle: { fontSize: 20, fontWeight: "bold", color: "#333" },
+  content: { padding: 24, alignItems: "center" },
+  skinImage: {
+    width: 300,
+    height: 300,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: "#000",
+    marginBottom: 24,
+  },
+  searchBox: {
+    width: "90%",
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 8,
+    elevation: 2,
+  },
+  searchLabel: { fontWeight: "bold", marginBottom: 8, textAlign: "center" },
+  input: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+});
