@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { useAuth } from "../../contexts/AuthContext";
 
-const API_URL = 'http://localhost:3000'; // Change to your backend URL
+const API_URL = 'https://proyectoapiminecraft.onrender.com';
 
 interface FavoriteSkin {
   _id?: string;
