@@ -5,19 +5,16 @@ require('dotenv').config();
 
 const app = express();
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log('Connected to MongoDB Atlas'))
-.catch((err) => console.error('MongoDB connection error:', err));
+.then(() => console.log('Conectado'))
+.catch((err) => console.error('Error:', err));
 
-// User Schema
 const userSchema = new mongoose.Schema({
   uid: {
     type: String,
@@ -37,125 +34,61 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-  minecraftUsername: {
-    type: String,
-    default: null,
-  },
-  favoriteSkinsHistory: [{
-    username: String,
-    skinUrl: String,
-    searchedAt: Date,
-  }],
 });
 
 const User = mongoose.model('User', userSchema);
 
-// Routes
+//Rutas
 
-// Create or update user
+//Crear o actualizar usuario
 app.post('/api/users', async (req, res) => {
   try {
     const { uid, email } = req.body;
 
     if (!uid || !email) {
-      return res.status(400).json({ error: 'UID and email are required' });
+      return res.status(400).json({ error: 'UID y Correo necesarios' });
     }
 
-    // Check if user exists
     let user = await User.findOne({ uid });
 
     if (user) {
-      // Update last login
       user.lastLogin = new Date();
       await user.save();
-      return res.json({ message: 'User login updated', user });
+      return res.json({ message: 'Actualizado', user });
     }
 
-    // Create new user
     user = new User({ uid, email });
     await user.save();
-    res.status(201).json({ message: 'User created', user });
+    res.status(201).json({ message: 'Creado', user });
   } catch (error) {
-    console.error('Error creating/updating user:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error usuario:', error);
+    res.status(500).json({ error: 'Error de Server' });
   }
 });
 
-// Get user by UID
+//Buscar UID
 app.get('/api/users/:uid', async (req, res) => {
   try {
     const user = await User.findOne({ uid: req.params.uid });
     
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
     res.json(user);
   } catch (error) {
-    console.error('Error fetching user:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error buscando:', error);
+    res.status(500).json({ error: 'Error de Server' });
   }
 });
 
-// Update user's Minecraft username
-app.patch('/api/users/:uid/minecraft', async (req, res) => {
-  try {
-    const { minecraftUsername } = req.body;
-    
-    const user = await User.findOneAndUpdate(
-      { uid: req.params.uid },
-      { minecraftUsername },
-      { new: true }
-    );
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json({ message: 'Minecraft username updated', user });
-  } catch (error) {
-    console.error('Error updating minecraft username:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Add skin to user's history
-app.post('/api/users/:uid/skins', async (req, res) => {
-  try {
-    const { username, skinUrl } = req.body;
-    
-    const user = await User.findOne({ uid: req.params.uid });
-    
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    user.favoriteSkinsHistory.push({
-      username,
-      skinUrl,
-      searchedAt: new Date(),
-    });
-
-    // Keep only last 10 searches
-    if (user.favoriteSkinsHistory.length > 10) {
-      user.favoriteSkinsHistory = user.favoriteSkinsHistory.slice(-10);
-    }
-
-    await user.save();
-    res.json({ message: 'Skin added to history', user });
-  } catch (error) {
-    console.error('Error adding skin to history:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Health check
+//Chequeo
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });
 });
 
-// Start server
+//Inicio
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server en ${PORT}`);
 });
