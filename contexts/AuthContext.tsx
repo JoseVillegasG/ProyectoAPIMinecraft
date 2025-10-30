@@ -8,6 +8,8 @@ import {
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth } from '../config/firebase';
 
+const API_URL = 'http://localhost:3000'; // Change to your backend URL
+
 interface AuthContextType {
   user: User | null;
   loading: boolean;
@@ -18,11 +20,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
-// Change this to your backend URL
-// For development: use your local IP (find it with `ipconfig` or `ifconfig`)
-// For production: use your deployed backend URL
-const API_URL = 'http://localhost:3000'; // or 'http://192.168.x.x:3000' for mobile testing
-
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -31,42 +28,33 @@ export const useAuth = () => {
   return context;
 };
 
-// Function to sync user with MongoDB
-const syncUserWithBackend = async (user: User) => {
-  try {
-    const response = await fetch(`${API_URL}/api/users`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        uid: user.uid,
-        email: user.email,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to sync user with backend');
-    }
-
-    const data = await response.json();
-    console.log('User synced with backend:', data);
-  } catch (error) {
-    console.error('Error syncing user with backend:', error);
-  }
-};
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Sync user with MongoDB
+  const syncUserWithBackend = async (firebaseUser: User) => {
+    try {
+      await fetch(`${API_URL}/api/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+        }),
+      });
+    } catch (error) {
+      console.error('Error syncing user with backend:', error);
+    }
+  };
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
       
-      // Sync with backend when user logs in
-      if (user) {
-        await syncUserWithBackend(user);
+      if (firebaseUser) {
+        // Sync with MongoDB whenever user logs in
+        await syncUserWithBackend(firebaseUser);
       }
       
       setLoading(false);
@@ -78,11 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUp = async (email: string, password: string) => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      
-      // Sync new user with MongoDB
-      await syncUserWithBackend(userCredential.user);
-      
-      console.log('User created and synced:', userCredential.user.uid);
+      // User will be synced in onAuthStateChanged
     } catch (error: any) {
       throw new Error(error.message);
     }
@@ -90,10 +74,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      
-      // Sync login with MongoDB (updates lastLogin)
-      await syncUserWithBackend(userCredential.user);
+      await signInWithEmailAndPassword(auth, email, password);
+      // User will be synced in onAuthStateChanged
     } catch (error: any) {
       throw new Error(error.message);
     }
