@@ -8,7 +8,7 @@ import {
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth } from '../config/firebase';
 
-const API_URL = 'http://localhost:3000'; // Change to your backend URL
+const API_URL = 'https://proyectoapiminecraft.onrender.com'; // Change to your backend URL
 
 interface AuthContextType {
   user: User | null;
