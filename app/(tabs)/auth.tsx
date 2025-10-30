@@ -1,5 +1,6 @@
 // app/(tabs)/auth.tsx
-import React, { useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +23,7 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
 
   const { signUp, signIn, user, logOut } = useAuth();
+  const router = useRouter();
 
   const showAlert = (title: string, message: string) => {
     if (Platform.OS === 'web') {
@@ -52,16 +54,17 @@ export default function AuthScreen() {
     try {
       if (isLogin) {
         await signIn(email, password);
-        showAlert('Éxito', 'Has iniciado sesión correctamente');
       } else {
         await signUp(email, password);
-        showAlert('Éxito', 'Cuenta creada correctamente');
       }
       
       // Clear form
       setEmail('');
       setPassword('');
       setConfirmPassword('');
+      
+      // Navigate to home after successful auth
+      router.replace('/(tabs)/home');
     } catch (error: any) {
       showAlert('Error', error.message || 'Ocurrió un error');
     } finally {
@@ -72,7 +75,7 @@ export default function AuthScreen() {
   const handleLogout = async () => {
     try {
       await logOut();
-      showAlert('Éxito', 'Has cerrado sesión');
+      // Already handled by index.tsx redirect
     } catch (error: any) {
       showAlert('Error', error.message);
     }
