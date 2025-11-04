@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+//Importa el context de firebase para que todo momento compruebe la autenticacion
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function AuthScreen() {
@@ -24,7 +25,7 @@ export default function AuthScreen() {
 
   const { signUp, signIn, user, logOut } = useAuth();
   const router = useRouter();
-
+  // Metodo para mostrar alertas de cualquier tipo
   const showAlert = (title: string, message: string) => {
     if (Platform.OS === 'web') {
       alert(`${title}: ${message}`);
@@ -32,42 +33,45 @@ export default function AuthScreen() {
       Alert.alert(title, message);
     }
   };
-
+  // Maneja la autenticacion del proceso
   const handleAuth = async () => {
-    // Validations
+    // Checa que haya correo y password en los textboxs
     if (!email || !password) {
       showAlert('Error', 'Por favor completa todos los campos');
       return;
     }
-
+    // Checa que no esten iguales las contrasenias y no sea login
     if (!isLogin && password !== confirmPassword) {
       showAlert('Error', 'Las contraseñas no coinciden');
       return;
     }
-
+    // Checa la longitud de la contrasenia
     if (password.length < 6) {
       showAlert('Error', 'La contraseña debe tener al menos 6 caracteres');
       return;
     }
-
+    // Si todo va bien, comienza el hook de carga
     setLoading(true);
     try {
+      // Si hay login espera la funcion SignIn o SignUp si no es login
       if (isLogin) {
         await signIn(email, password);
       } else {
         await signUp(email, password);
       }
       
-      // Clear form
+      // Reinicia borrando los textboxs
       setEmail('');
       setPassword('');
       setConfirmPassword('');
       
-      // Navigate to home after successful auth
+      // Te lleva a home cuando hay errores
       router.replace('/(tabs)/home');
-    } catch (error: any) {
+    } // SI hay un error, avisa y cancela
+      catch (error: any) {
       showAlert('Error', error.message || 'Ocurrió un error');
     } finally {
+      //Despues de que todo sale bien, reinicia el hook de loading
       setLoading(false);
     }
   };
@@ -75,13 +79,13 @@ export default function AuthScreen() {
   const handleLogout = async () => {
     try {
       await logOut();
-      // Already handled by index.tsx redirect
+      // Redirige el logout y espera a que termine
     } catch (error: any) {
       showAlert('Error', error.message);
     }
   };
 
-  // Render for web
+  // Formato en web
   if (Platform.OS === 'web') {
     if (user) {
       return (
@@ -189,7 +193,7 @@ export default function AuthScreen() {
     );
   }
 
-  // Render for mobile (original code)
+  // formato en movil
   if (user) {
     return (
       <View style={styles.container}>
@@ -294,7 +298,7 @@ export default function AuthScreen() {
   );
 }
 
-// Mobile Styles (React Native)
+// Estilos
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -385,7 +389,7 @@ const styles = StyleSheet.create({
   },
 });
 
-// Web Styles (CSS-in-JS)
+// Estilos web 
 const webStyles = {
   container: {
     fontFamily: 'system-ui, -apple-system, sans-serif',

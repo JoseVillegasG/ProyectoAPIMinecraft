@@ -2,12 +2,14 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
-
+// Inicia express y lo guarda en la variable app
 const app = express();
-
+// Llama la funcion cors para que todo funcione
 app.use(cors());
-app.use(express.json({ limit: '10mb' })); // Increased limit for base64 images
+// Sube el limite del json para las imag64
+app.use(express.json({ limit: '10mb' })); 
 
+//Conecta al mongo
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -15,14 +17,14 @@ mongoose.connect(process.env.MONGODB_URI, {
 .then(() => console.log('Conectado'))
 .catch((err) => console.error('Error:', err));
 
-// Skin Favorita
+// Formato de skin favorita
 const favoriteSkinSchema = new mongoose.Schema({
   username: {
     type: String,
     required: true,
   },
   skinImage: {
-    type: String, // Base64 encoded image
+    type: String, // imag64
     required: true,
   },
   addedAt: {
@@ -30,7 +32,7 @@ const favoriteSkinSchema = new mongoose.Schema({
     default: Date.now,
   },
 });
-
+// Formato de usuario
 const userSchema = new mongoose.Schema({
   uid: {
     type: String,
@@ -50,32 +52,34 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  //llama el esquema de skins favoritas y lo guarda aqui. Lista dentro de una lista
   favoriteSkins: [favoriteSkinSchema],
 });
-
+// Guarda el modelo del esquema en la constante user
 const User = mongoose.model('User', userSchema);
 
-// Routes
+// Rutas de API
 
-// Create or update user
+// Crear o actualizar usuario
 app.post('/api/users', async (req, res) => {
   try {
     const { uid, email } = req.body;
-
+    // Si falta uid o correo
     if (!uid || !email) {
       return res.status(400).json({ error: 'UID y Correo necesarios' });
     }
 
     let user = await User.findOne({ uid });
-
+    // Confirma que haya usuario, actualiza el login
     if (user) {
       user.lastLogin = new Date();
       await user.save();
       return res.json({ message: 'Actualizado', user });
     }
-
+    // Si no hay usuario, entonces lo creaa con el esquema de arriba y lo guarda en la variable
     user = new User({ uid, email });
     await user.save();
+    // Guarda el usuario
     res.status(201).json({ message: 'Creado', user });
   } catch (error) {
     console.error('Error usuario:', error);
@@ -83,15 +87,15 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-// Get user by UID
+// Buscar user por UID
 app.get('/api/users/:uid', async (req, res) => {
   try {
     const user = await User.findOne({ uid: req.params.uid });
-    
+    // Si no hay usuario
     if (!user) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
-
+    // Si hay respuesta, lo guarda en json
     res.json(user);
   } catch (error) {
     console.error('Error buscando:', error);
@@ -99,7 +103,7 @@ app.get('/api/users/:uid', async (req, res) => {
   }
 });
 
-// Add favorite skin
+// Agrega skin favorita
 app.post('/api/users/:uid/favorites', async (req, res) => {
   try {
     const { uid } = req.params;
@@ -115,7 +119,7 @@ app.post('/api/users/:uid/favorites', async (req, res) => {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    // Check if skin already favorited
+    // Checa si la skin ya esta en favoritos (doble refuerzo)
     const existingFavorite = user.favoriteSkins.find(
       fav => fav.username.toLowerCase() === username.toLowerCase()
     );
@@ -124,7 +128,7 @@ app.post('/api/users/:uid/favorites', async (req, res) => {
       return res.status(400).json({ error: 'Skin ya está en favoritos' });
     }
 
-    // Add new favorite
+    // Agrega el favorito
     user.favoriteSkins.push({
       username,
       skinImage,
@@ -138,7 +142,7 @@ app.post('/api/users/:uid/favorites', async (req, res) => {
   }
 });
 
-// Remove favorite skin
+// Remover skin favorita
 app.delete('/api/users/:uid/favorites/:username', async (req, res) => {
   try {
     const { uid, username } = req.params;
@@ -161,7 +165,7 @@ app.delete('/api/users/:uid/favorites/:username', async (req, res) => {
   }
 });
 
-// Get user's favorite skins
+// Buscar las skins favoritas del usuario
 app.get('/api/users/:uid/favorites', async (req, res) => {
   try {
     const user = await User.findOne({ uid: req.params.uid });
@@ -177,12 +181,12 @@ app.get('/api/users/:uid/favorites', async (req, res) => {
   }
 });
 
-// Health check
+// Chequeo constante
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });
 });
 
-// Start server
+// Inicio de server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server en ${PORT}`);

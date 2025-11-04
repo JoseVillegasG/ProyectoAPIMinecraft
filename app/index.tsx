@@ -12,7 +12,7 @@ export default function Index() {
       </View>
     );
   }
-
+  // Si no hay usuario te manda login, si no te manda al home para el programa principal
   if (!user) {
     return <Redirect href="/(tabs)/auth" />;
   }

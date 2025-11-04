@@ -16,7 +16,9 @@ import {
 import { useAuth } from "../../contexts/AuthContext";
 
 const API_URL = 'https://proyectoapiminecraft.onrender.com';
+const REFRESH_INTERVAL = 5000; 
 
+// Estructura de la data relacionada al listado de skins favoritos
 interface FavoriteSkin {
   _id?: string;
   username: string;
@@ -24,9 +26,11 @@ interface FavoriteSkin {
   addedAt?: Date;
 }
 
+// Hooks
 export default function HomeScreen() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewerRef = useRef<any>(null);
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isWeb = Platform.OS === "web";
 
   const [username, setUsername] = useState("");
@@ -34,94 +38,150 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
   const [favoriteSkins, setFavoriteSkins] = useState<FavoriteSkin[]>([]);
   const [addingFavorite, setAddingFavorite] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   const { user, logOut } = useAuth();
   const router = useRouter();
 
-  // Redirect if not logged in
+  // Se encarga de mandar al usuario al login si no hay un usuario conectado
   useEffect(() => {
     if (!user) {
       router.replace('/auth');
     }
   }, [user]);
 
-  // Load favorites on mount
+  // Carga las skins favoritas del usuario
+  const loadFavorites = async (silent = false) => {
+    // Si no hay ususario, cancela operacion
+    if (!user) return;
+    
+    try {
+      // Hace fetch a los favoritos del usuario en el mongoDB usando la uid (unica) y la api url que es render.com
+      const response = await fetch(`${API_URL}/api/users/${user.uid}/favorites`);
+      // Crea una constante llamada data que lee la respuesta del fetch y lo transforma en un json mientras el await detiene todo para poder ver que se pueda leer o no
+      const data = await response.json();
+      // Pone las skins favoritas del usuaario
+      setFavoriteSkins(data.favoriteSkins || []);
+      // Muestra el ultimo refresh desde la llamada del fetch (que se hace cada vez que se refresca la pagina, 5 seg aprox.)
+      setLastRefresh(new Date());
+      // Si se ha renovado la info, avisa de esto
+      if (!silent) {
+        console.log('Favoritos renovados');
+      }
+      // Si hay uun error cargando la info, avisa
+    } catch (error) {
+      console.error('Error cargando favoritos:', error);
+    }
+  };
+
+  // Hook para cargar favoritos si es que hay usuario
   useEffect(() => {
     if (user) {
       loadFavorites();
     }
   }, [user]);
 
-  const loadFavorites = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/users/${user?.uid}/favorites`);
-      const data = await response.json();
-      setFavoriteSkins(data.favoriteSkins || []);
-    } catch (error) {
-      console.error('Error loading favorites:', error);
-    }
-  };
+  // Auto renovacion 
+  useEffect(() => {
+    if (user) {
+      // Borrar cualquier intervalo para comenzar a contar
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
 
+      // Crear un nuevo intervalo para la info
+      refreshIntervalRef.current = setInterval(() => {
+        loadFavorites(true); // renovacion para las skins
+      }, REFRESH_INTERVAL);
+
+      // Limpia cuando termina el proceso
+      return () => {
+        if (refreshIntervalRef.current) {
+          clearInterval(refreshIntervalRef.current);
+        }
+      };
+    }
+  }, [user]);
+
+  // funcion para encargarse de cuando se hace logout considerando intervalos de renovacion
   const handleLogout = async () => {
     try {
+      // Limpia los intervalos primero
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+      //Espera a la funcion de logout para salir
       await logOut();
+      // Cambiar el router devuelta a auth para mandarte devuelta a la pantalla de inicio
       router.replace('/auth');
+      // Si hay un error en esto, dependiendo de la plataforma de lo manda con una funcion diferente
     } catch (error: any) {
       if (Platform.OS === 'web') {
+        // lo manda por alert de web
         alert('Error: ' + error.message);
       } else {
+        // lo manda con el alert integrado en los moviles
         Alert.alert('Error', error.message);
       }
     }
   };
 
-  // Convert image URL to base64
+  // Convierte el url en imagen64 para guardado en mongo
   const imageUrlToBase64 = async (url: string): Promise<string> => {
     try {
+      // Hace fetch al url de la skin con la variable url que seria la url del skin en el input
       const response = await fetch(url);
       const blob = await response.blob();
-      
+      //Agrega si se pudo subir y leer el url ya en imagen64
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
         reader.onerror = reject;
         reader.readAsDataURL(blob);
       });
+      // Regresa para errores
     } catch (error) {
       throw new Error('Error convirtiendo imagen');
     }
   };
 
-  // Add skin to favorites
+  // Agregar una skin a favs
   const addToFavorites = async () => {
+    // Tiene que haber una url de skin y un usuario buscado para poder tener la info asi que comprobamos
     if (!skinUrl || !username) {
+      // Avisa que se debe tener un usuario buscado
       if (Platform.OS === 'web') {
         alert('Busca un jugador primero');
       } else {
         Alert.alert('Error', 'Busca un jugador primero');
       }
+      // Despues de avisar, terminar la constante
       return;
     }
 
-    // Check if already favorited
+    // Si es que hay un usuario buscado, ahora toca comprobar que dicha skin no este ya en mongo
+    // Crea la constante alreadyfavorited que usando la palabra some busca en favoriteskins y si encuentra fav entonces es true
     const alreadyFavorited = favoriteSkins.some(
       fav => fav.username.toLowerCase() === username.toLowerCase()
     );
-
+    // Si la constante alreadyfavorited es true, entonces avisa que ya esta en favoritos
     if (alreadyFavorited) {
+      // Avisa en web
       if (Platform.OS === 'web') {
         alert('Esta skin ya está en favoritos');
       } else {
+      // Avisa en movil
         Alert.alert('Info', 'Esta skin ya está en favoritos');
       }
+      // Despues de avisar, terminar la constante
       return;
     }
-
+    // Si no esta ya favorita y si hay usuario, entonces ya podemos hacerlo fav, esta variable lo confirma e inicia ese otro proceso
     setAddingFavorite(true);
     try {
-      // Convert skin image to base64
+      // Creamos la variable imag64 que usa la funcion anterior para transformar el url en imag64
       const base64Image = await imageUrlToBase64(skinUrl);
-
+      // Una vez la imag64 hecha, hace un fetch del usuario via uid en el back y hace un post con la imag64
       const response = await fetch(`${API_URL}/api/users/${user?.uid}/favorites`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -130,44 +190,49 @@ export default function HomeScreen() {
           skinImage: base64Image,
         }),
       });
-
+      // Si es que no hubo respuesta exitosa de parte del back, entonces manda un error
       if (!response.ok) {
+        // Crea la constante error basada en la respuesta en formato json
         const error = await response.json();
         throw new Error(error.error || 'Error agregando favorito');
       }
-
-      await loadFavorites();
-      
+      // Una vez la skin agregada al back y en resultado al mongo, llama la funcion para renovar el front
+      await loadFavorites(); 
+      //Avisos dependiendo de plataforma
       if (Platform.OS === 'web') {
         alert('¡Agregado a favoritos!');
       } else {
         Alert.alert('Éxito', '¡Agregado a favoritos!');
       }
+      // Aviso si es que hubo cualquier error
     } catch (error: any) {
-      console.error('Error adding favorite:', error);
+      console.error('Error agregando favorito:', error);
       if (Platform.OS === 'web') {
         alert('Error: ' + error.message);
       } else {
         Alert.alert('Error', error.message);
       }
-    } finally {
+    } // Despues de todo el proceso vuelve a llamar addingfavorite con falso para esperar otro intento
+    finally {
       setAddingFavorite(false);
     }
   };
 
-  // Remove from favorites
+  // Esta funcion es para remover skins favoritas, recibe un string con el nombre usuario de la skin favorita que quieres borrar
   const removeFavorite = async (favUsername: string) => {
     try {
+      // Hace un fetch con el nombre del usuario en la lista de favoritos del usuario y usa el metodo DELETE para borrarlo
       const response = await fetch(
         `${API_URL}/api/users/${user?.uid}/favorites/${favUsername}`,
         { method: 'DELETE' }
       );
-
+      // Si es que no hubo respuesta exitosa, avisa
       if (!response.ok) throw new Error('Error eliminando favorito');
-
-      await loadFavorites();
+      // Al igual que cuando se agrego una skin, se vuelva a renovar el front con los cambios
+      await loadFavorites(); 
+      // Si hubo cualquier error, avisa
     } catch (error: any) {
-      console.error('Error removing favorite:', error);
+      console.error('Error removiendo favorito:', error);
       if (Platform.OS === 'web') {
         alert('Error: ' + error.message);
       } else {
@@ -176,9 +241,11 @@ export default function HomeScreen() {
     }
   };
 
-  // Fetch skin from player name
+  // Este es para la busqueda de la skin basada en usuario, probablemente el mas importante
   const fetchSkin = async () => {
+    // Checa si no hay usuario ingresado en el textbox antes de intentar
     if (!username) {
+      // Avisa si no hay usuario elegido
       if (Platform.OS === 'web') {
         alert("Por favor ingresa un nombre de jugador.");
       } else {
@@ -186,32 +253,39 @@ export default function HomeScreen() {
       }
       return;
     }
-
+    // Pone el estado de carga en true para mostrarlo en busquedaa
     setLoading(true);
     try {
-      // Get UUID
+      // Consigue el UUID con un fetch a la api de mojang con la info del textbox
       const profileRes = await fetch(
         `https://corsproxy.io/?https://api.mojang.com/users/profiles/minecraft/${username}`
       );
+      // Si no hubo respuesta de perfil, entonces no existe el jugador con ese textbox y avisa
       if (!profileRes.ok) throw new Error("Jugador no encontrado");
+      // Si todo bien, entonces la respuesta del perfil lo lee en json y lo guarda en la constante profileData
       const profileData = await profileRes.json();
+      // Adicionalmente guardamos en otra variable uuid checando el json y extrayendo el .id
       const uuid = profileData.id;
 
-      // Get textures
+      // Agarra las texturas del usuario para poder desplegarlo con un fetch buscando con el uuid del usuario
       const textureRes = await fetch(
         `https://corsproxy.io/?https://sessionserver.mojang.com/session/minecraft/profile/${uuid}`
       );
+      // La respuesta se guarda en un json con las texturas
       const textureData = await textureRes.json();
 
-      // Decode base64
+      // Primero guarda el valor codificado del texture data en su variable de properties
       const encodedValue = textureData.properties[0].value;
+      // usamos la funcion atob para decodificarlo a bytes y luego codificarlo a string, parseamos dicho string y lo guardamos en json con la variable decoded
       const decoded = JSON.parse(atob(encodedValue));
 
-      // Get skin URL
+      // sacamos la skin ya con el string decodificado y con el resto de la info 
       const skin = decoded.textures?.SKIN?.url;
+      // Si no hay skin, avisa
       if (!skin) throw new Error("No se encontró la skin");
-
+      // Llamamos la funcion setSkinUrl con el input de la skin encontrada para poder desplegar la skin
       setSkinUrl(skin);
+      // Avisa si hubo un error
     } catch (error: any) {
       console.error(error);
       if (Platform.OS === 'web') {
@@ -219,22 +293,25 @@ export default function HomeScreen() {
       } else {
         Alert.alert("Error", error.message || "No se pudo obtener la skin");
       }
+      // Al final de todo el proceso pone devuelta el hook de carga en falso para esperar un nuevo proceso
     } finally {
       setLoading(false);
     }
   };
 
-  // Load skin on web with skinview3d
+  // Este efecto carga la skin con skinview3d
   useEffect(() => {
+    //Si no es en web o no hay url de la skin, cancela el proceso
     if (!isWeb || !skinUrl) return;
-
+    // Si todo esta bien, comienza el proceso
     let mounted = true;
     (async () => {
+      // importa skinview3d y lo guarda en la variable
       const skinview3d = await import("skinview3d");
+      // Si es que no hay canvas y no esta montado, cancela
       if (!mounted || !canvasRef.current) return;
-
       if (viewerRef.current) viewerRef.current.dispose?.();
-
+      // Hace un viewer que despliega la skin en 3d
       const viewer = new skinview3d.SkinViewer({
         canvas: canvasRef.current!,
         width: 400,
@@ -242,16 +319,16 @@ export default function HomeScreen() {
       });
 
       viewerRef.current = viewer;
-
+      // Carga la skin en el viewer
       try {
         await viewer.loadSkin(skinUrl);
       } catch (e) {
-        console.error("Failed to load skin", e);
+        console.error("Error cargando skin", e);
       }
 
       if (viewer.controls) viewer.controls.enabled = true;
     })();
-
+    // Regresa la informacion a la normalidad despues de cargar toda la info necesaria
     return () => {
       mounted = false;
       if (viewerRef.current) {
@@ -261,7 +338,7 @@ export default function HomeScreen() {
     };
   }, [skinUrl, isWeb]);
 
-  // WEB
+  // Formato para web del front
   if (isWeb) {
     return (
       <div style={{ fontFamily: "sans-serif" }}>
@@ -275,19 +352,25 @@ export default function HomeScreen() {
             backgroundColor: "#ccc",
             boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
             zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingLeft: 50,
+            paddingRight: 50,
           }}
         >
           <label
             style={{
               fontSize: 24,
               fontWeight: "bold",
-              marginLeft: 50,
-              lineHeight: "64px",
               color: "#333",
             }}
           >
             Proyecto API Minecraft
           </label>
+          <div style={{ fontSize: 12, color: "#666" }}>
+            Última actualización: {lastRefresh.toLocaleTimeString()}
+          </div>
         </div>
 
         <div style={{ paddingTop: 80, paddingLeft: 24, paddingRight: 24, paddingBottom: 40 }}>
@@ -449,7 +532,7 @@ export default function HomeScreen() {
     );
   }
 
-  // Mobile
+  // Formato para movil, como en movil no funciona skinview3d, se cambia el proceso a usar mcheads.net
   const skinPreview = skinUrl
     ? `https://mc-heads.net/body/${skinUrl.split("/").pop()}/400`
     : null;
@@ -458,6 +541,9 @@ export default function HomeScreen() {
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Proyecto API Minecraft</Text>
+        <Text style={styles.lastUpdate}>
+          Última actualización: {lastRefresh.toLocaleTimeString()}
+        </Text>
       </View>
 
       <View style={styles.content}>
@@ -541,13 +627,15 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f5" },
   header: {
-    height: 64,
+    height: 80,
     backgroundColor: "#ccc",
     justifyContent: "center",
     alignItems: "center",
     elevation: 3,
+    paddingTop: 10,
   },
   headerTitle: { fontSize: 20, fontWeight: "bold", color: "#333" },
+  lastUpdate: { fontSize: 10, color: "#666", marginTop: 4 },
   content: { padding: 24, alignItems: "center" },
   skinImage: {
     width: 300,

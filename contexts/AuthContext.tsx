@@ -8,8 +8,10 @@ import {
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth } from '../config/firebase';
 
-const API_URL = 'https://proyectoapiminecraft.onrender.com'; // Change to your backend URL
+// Checa el back en render.com y lo guarda en apiurl
+const API_URL = 'https://proyectoapiminecraft.onrender.com'; 
 
+// Hace el cuerpo de data para la info del usuario
 interface AuthContextType {
   user: User | null;
   loading: boolean;
@@ -32,9 +34,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Sync user with MongoDB
+  // Sincroniza mongodb
   const syncUserWithBackend = async (firebaseUser: User) => {
     try {
+      // hace fetch de los usuarios de parte del back para hacer un post del usuario
       await fetch(`${API_URL}/api/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -44,16 +47,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }),
       });
     } catch (error) {
-      console.error('Error syncing user with backend:', error);
+      console.error('Error sincronizando back:', error);
     }
   };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Pone el usuario
       setUser(firebaseUser);
-      
+      // Si hay usuario de firebase, entonces sincroniza a mongo
       if (firebaseUser) {
-        // Sync with MongoDB whenever user logs in
+        // Llama la funcion para sincronizar
         await syncUserWithBackend(firebaseUser);
       }
       
